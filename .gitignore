@@ -1,0 +1,37 @@
+# ==========================================
+# Ambiente Virtual & Python
+# ==========================================
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ==========================================
+# Planilhas e Dados Locais (Privacidade)
+# ==========================================
+*.xlsx
+*.xls
+*.csv
+.historico_alteracoes.json
+
+# ==========================================
+# Arquivos Gerados (PDFs e Saídas)
+# ==========================================
+*.pdf
+
+# ==========================================
+# IDEs, Editores e Sistema Operacional
+# ==========================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
