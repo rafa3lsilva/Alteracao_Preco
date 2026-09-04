@@ -233,60 +233,51 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
     }
 
 
-def carregar_historico():
-    if os.path.exists(ARQUIVO_HISTORICO):
+try:
+    from storage_manager import carregar_historico, salvar_historico, resetar_historico
+except ImportError:
+    def carregar_historico():
+        if os.path.exists(ARQUIVO_HISTORICO):
+            try:
+                with open(ARQUIVO_HISTORICO, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def salvar_historico(data_str, itens_processados, info_execucao=""):
+        historico = carregar_historico()
+        if data_str not in historico:
+            historico[data_str] = {'itens': [], 'execucoes': []}
+        if isinstance(historico[data_str], list):
+            historico[data_str] = {'itens': historico[data_str], 'execucoes': []}
+        if info_execucao == "primeiro":
+            historico[data_str]['itens'] = [it['key'] for it in itens_processados]
+        else:
+            conjunto = set(historico[data_str]['itens'])
+            for it in itens_processados:
+                conjunto.add(it['key'])
+            historico[data_str]['itens'] = list(conjunto)
+        historico[data_str]['execucoes'].append({
+            'horario': datetime.now().strftime("%H:%M:%S"),
+            'qtd_itens': len(itens_processados),
+            'tipo': info_execucao
+        })
         try:
-            with open(ARQUIVO_HISTORICO, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def salvar_historico(data_str, itens_processados, info_execucao=""):
-    historico = carregar_historico()
-    if data_str not in historico:
-        historico[data_str] = {
-            'itens': [],
-            'execucoes': []
-        }
-    
-    if isinstance(historico[data_str], list):
-        historico[data_str] = {
-            'itens': historico[data_str],
-            'execucoes': []
-        }
-    
-    if info_execucao == "primeiro":
-        historico[data_str]['itens'] = [it['key'] for it in itens_processados]
-    else:
-        conjunto = set(historico[data_str]['itens'])
-        for it in itens_processados:
-            conjunto.add(it['key'])
-        historico[data_str]['itens'] = list(conjunto)
-
-    historico[data_str]['execucoes'].append({
-        'horario': datetime.now().strftime("%H:%M:%S"),
-        'qtd_itens': len(itens_processados),
-        'tipo': info_execucao
-    })
-    
-    try:
-        with open(ARQUIVO_HISTORICO, 'w', encoding='utf-8') as f:
-            json.dump(historico, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Aviso ao salvar histórico: {e}")
-
-
-def resetar_historico():
-    if os.path.exists(ARQUIVO_HISTORICO):
-        try:
-            os.remove(ARQUIVO_HISTORICO)
-            print("Histórico de alterações resetado com sucesso!")
+            with open(ARQUIVO_HISTORICO, 'w', encoding='utf-8') as f:
+                json.dump(historico, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"Erro ao remover arquivo de histórico: {e}")
-    else:
-        print("Nenhum histórico anterior encontrado para resetar.")
+            print(f"Aviso ao salvar histórico: {e}")
+
+    def resetar_historico():
+        if os.path.exists(ARQUIVO_HISTORICO):
+            try:
+                os.remove(ARQUIVO_HISTORICO)
+                print("Histórico de alterações resetado com sucesso!")
+            except Exception as e:
+                print(f"Erro ao remover arquivo de histórico: {e}")
+        else:
+            print("Nenhum histórico anterior encontrado para resetar.")
 
 
 def filtrar_dados(dados, modo="todos", hora_corte=None, apenas_novos=False):

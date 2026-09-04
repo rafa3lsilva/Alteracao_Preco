@@ -10,11 +10,14 @@ from gerar_relatorio_pdf import (
     verificar_conformidade_planilha,
     filtrar_dados,
     gerar_pdf,
-    salvar_historico,
-    carregar_historico,
-    resetar_historico,
-    ARQUIVO_HISTORICO,
     PALAVRAS_CHAVE_HORTIFRUTI
+)
+
+from storage_manager import (
+    carregar_historico,
+    salvar_historico,
+    resetar_historico,
+    obter_cliente_gsheets
 )
 
 st.set_page_config(
@@ -28,6 +31,13 @@ st.set_page_config(
 with st.sidebar:
     st.title("🏷️ Memória do Dia")
     
+    # Status da Conexão
+    ws_client = obter_cliente_gsheets()
+    if ws_client:
+        st.caption("🟢 **Nuvem Ativa:** Google Sheets Conectado")
+    else:
+        st.caption("💾 **Armazenamento:** Disco Local")
+        
     historico = carregar_historico()
     hoje = datetime.now().strftime("%d/%m/%Y")
     info_hoje = historico.get(hoje, {})

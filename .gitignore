@@ -18,6 +18,8 @@ __pycache__/
 *.xls
 *.csv
 .historico_alteracoes.json
+*.json
+.streamlit/secrets.toml
 
 # ==========================================
 # Arquivos Gerados (PDFs e Saídas)
