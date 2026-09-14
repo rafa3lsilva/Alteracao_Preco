@@ -1,7 +1,9 @@
 import os
 import re
 import sys
+import csv
 import json
+import io
 import warnings
 import argparse
 
@@ -67,54 +69,205 @@ def limpar_texto(texto):
     return txt
 
 
-def verificar_conformidade_planilha(caminho_xlsx):
+def verificar_conformidade_arquivo(caminho_ou_buffer, nome_arquivo=""):
     """
-    Verifica se a planilha segue os padrões recomendados:
-    1. Deve ser do tipo ANALÍTICO (não Sintético/Simplificado)
-    2. Deve estar SEM o setor Hortifrúti
+    Verifica se o arquivo segue as boas práticas (ex: presença de hortifrúti).
     """
-    if isinstance(caminho_xlsx, str) and not os.path.exists(caminho_xlsx):
-        return []
-
-    wb = openpyxl.load_workbook(caminho_xlsx, data_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-
     alertas = []
+    nome_norm = (nome_arquivo or (caminho_ou_buffer if isinstance(caminho_ou_buffer, str) else "")).lower()
     
-    # 1. Checagem de tipo (Analítico vs Sintético/Simplificado)
-    sheet_name = ws.title.lower()
-    titulo_relatorio = str(rows[0][0]) if rows and rows[0][0] else ""
-    
-    is_analitico = "ANALITICO" in titulo_relatorio.upper() or "analitico" in sheet_name
-    if not is_analitico:
-        alertas.append(
-            "[!] TIPO DE RELATÓRIO:\n"
-            "    A planilha exportada está no formato SIMPLIFICADO / SINTÉTICO.\n"
-            "    * O formato correto no Varejofácil deve ser: LISTAGEM DE PREÇOS - ANALÍTICO\n"
-            "      (para conter o histórico de horários das alterações)."
-        )
+    if nome_norm.endswith(".csv"):
+        # Leitura de linhas do CSV
+        try:
+            if isinstance(caminho_ou_buffer, str):
+                with open(caminho_ou_buffer, 'r', encoding='utf-8', errors='replace') as f:
+                    conteudo = f.read()
+            else:
+                if hasattr(caminho_ou_buffer, 'seek'):
+                    caminho_ou_buffer.seek(0)
+                conteudo = caminho_ou_buffer.read()
+                if isinstance(conteudo, bytes):
+                    try:
+                        conteudo = conteudo.decode('utf-8')
+                    except UnicodeDecodeError:
+                        conteudo = conteudo.decode('latin-1', errors='replace')
+                if hasattr(caminho_ou_buffer, 'seek'):
+                    caminho_ou_buffer.seek(0)
 
-    # 2. Checagem de Hortifrúti
-    tem_hortifruti = False
-    for r in rows:
-        for c in r:
-            if c:
-                c_upper = str(c).upper()
-                if any(kw in c_upper for kw in PALAVRAS_CHAVE_HORTIFRUTI):
-                    tem_hortifruti = True
-                    break
+            tem_hortifruti = any(kw in conteudo.upper() for kw in PALAVRAS_CHAVE_HORTIFRUTI)
+            if tem_hortifruti:
+                alertas.append(
+                    "[!] SETOR HORTIFRÚTI DETECTADO NO CSV:\n"
+                    "    O setor de HORTIFRÚTI foi incluído no arquivo exportado.\n"
+                    "    * O sistema removerá todas as seções de Hortifrúti automaticamente do PDF."
+                )
+        except Exception:
+            pass
+        return alertas
+
+    # Verificação para XLSX
+    try:
+        if isinstance(caminho_ou_buffer, str) and not os.path.exists(caminho_ou_buffer):
+            return []
+
+        wb = openpyxl.load_workbook(caminho_ou_buffer, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+
+        sheet_name = ws.title.lower()
+        titulo_relatorio = str(rows[0][0]) if rows and rows[0][0] else ""
+        
+        is_analitico = "ANALITICO" in titulo_relatorio.upper() or "analitico" in sheet_name
+        if not is_analitico:
+            alertas.append(
+                "[!] FORMATO DA PLANILHA:\n"
+                "    Planilha no formato Simplificado detectada.\n"
+                "    * Recomendação: Use a exportação em CSV para obter as descrições mais completas dos produtos."
+            )
+
+        tem_hortifruti = False
+        for r in rows:
+            for c in r:
+                if c:
+                    c_upper = str(c).upper()
+                    if any(kw in c_upper for kw in PALAVRAS_CHAVE_HORTIFRUTI):
+                        tem_hortifruti = True
+                        break
+            if tem_hortifruti:
+                break
+
         if tem_hortifruti:
-            break
-
-    if tem_hortifruti:
-        alertas.append(
-            "[!] SETOR HORTIFRÚTI DETECTADO:\n"
-            "    O setor de HORTIFRÚTI foi incluído na exportação da planilha.\n"
-            "    * A orientação da loja é gerar o relatório SEM o setor de Hortifrúti."
-        )
+            alertas.append(
+                "[!] SETOR HORTIFRÚTI DETECTADO:\n"
+                "    O setor de HORTIFRÚTI foi incluído na exportação da planilha.\n"
+                "    * O sistema removerá o Hortifrúti automaticamente do PDF."
+            )
+    except Exception:
+        pass
 
     return alertas
+
+
+def extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=None):
+    if ignorar_secoes is None:
+        ignorar_secoes = PALAVRAS_CHAVE_HORTIFRUTI
+
+    if isinstance(caminho_ou_buffer, str):
+        if not os.path.exists(caminho_ou_buffer):
+            raise FileNotFoundError(f"Arquivo CSV não encontrado: {caminho_ou_buffer}")
+        with open(caminho_ou_buffer, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+    else:
+        if hasattr(caminho_ou_buffer, 'seek'):
+            caminho_ou_buffer.seek(0)
+        raw_data = caminho_ou_buffer.read()
+        if isinstance(raw_data, bytes):
+            try:
+                content = raw_data.decode('utf-8')
+            except UnicodeDecodeError:
+                content = raw_data.decode('latin-1', errors='replace')
+        else:
+            content = str(raw_data)
+        if hasattr(caminho_ou_buffer, 'seek'):
+            caminho_ou_buffer.seek(0)
+
+    lines = [l.strip() for l in content.splitlines() if l.strip()]
+    if not lines:
+        return {
+            'empresa': 'SUPERMERCADO JEAN LTDA',
+            'periodo': datetime.now().strftime("%d/%m/%Y"),
+            'secoes': {}
+        }
+
+    delimiter = ';' if ';' in lines[0] else ','
+    reader = csv.reader(lines, delimiter=delimiter)
+    header = next(reader)
+    
+    col_quebra = -1
+    col_cod = -1
+    col_desc = -1
+    col_emb = -1
+    col_venda = -1
+    col_hora = -1
+
+    for idx, h in enumerate(header):
+        h_norm = h.upper().strip()
+        if "QUEBRA" in h_norm or "SEÇÃO" in h_norm or "SECAO" in h_norm:
+            col_quebra = idx
+        elif ("CÓDIGO DO PRODUTO" in h_norm or "CODIGO DO PRODUTO" in h_norm or (("CÓDIGO" in h_norm or "CODIGO" in h_norm) and "FISCAL" not in h_norm)) and col_cod == -1:
+            col_cod = idx
+        elif "DESCRIÇÃO" in h_norm or "DESCRICAO" in h_norm:
+            col_desc = idx
+        elif "EMBALAGEM" in h_norm or "EMB" in h_norm:
+            col_emb = idx
+        elif "VENDA ATUAL" in h_norm or "PREÇO ATUAL" in h_norm or "PRECO ATUAL" in h_norm:
+            col_venda = idx
+        elif "HORA" in h_norm:
+            col_hora = idx
+
+    if col_cod == -1 and len(header) > 1: col_cod = 1
+    if col_desc == -1 and len(header) > 2: col_desc = 2
+    if col_emb == -1 and len(header) > 3: col_emb = 3
+    if col_venda == -1 and len(header) > 8: col_venda = 8
+
+    data_by_section = {}
+    current_section = "GERAL"
+
+    for r in reader:
+        if not r or len(r) <= max(col_cod, col_desc):
+            continue
+        
+        sec_raw = r[col_quebra].strip() if col_quebra != -1 and len(r) > col_quebra else ""
+        if sec_raw:
+            sec_clean = re.sub(r'^(Seção|Secao|Seo):\s*', '', sec_raw, flags=re.IGNORECASE).strip()
+            if any(ign.upper() in sec_clean.upper() for ign in ignorar_secoes):
+                current_section = None
+                continue
+            current_section = sec_clean
+            if current_section not in data_by_section:
+                data_by_section[current_section] = []
+        
+        if current_section is None:
+            continue
+
+        raw_cod = r[col_cod].strip()
+        raw_desc = r[col_desc].strip()
+        raw_emb = r[col_emb].strip() if col_emb != -1 and len(r) > col_emb else "UN"
+        raw_venda = r[col_venda].strip() if col_venda != -1 and len(r) > col_venda else "0,00"
+        raw_hora = r[col_hora].strip() if col_hora != -1 and len(r) > col_hora else ""
+
+        if not raw_cod or not raw_desc:
+            continue
+
+        clean_cod = str(int(raw_cod)) if raw_cod.isdigit() else raw_cod
+        
+        venda_str = raw_venda
+        if venda_str and not venda_str.startswith("R$"):
+            venda_str = f"R$ {venda_str}"
+        elif not venda_str:
+            venda_str = "R$ 0,00"
+
+        hora_str = raw_hora if raw_hora else raw_emb
+        item_key = f"{clean_cod}#{venda_str}"
+
+        if current_section not in data_by_section:
+            data_by_section[current_section] = []
+
+        data_by_section[current_section].append({
+            'key': item_key,
+            'cod': clean_cod,
+            'cod_raw': raw_cod,
+            'descricao': limpar_texto(raw_desc),
+            'venda_atual': venda_str,
+            'hora': hora_str,
+            'emb': raw_emb
+        })
+
+    return {
+        'empresa': 'SUPERMERCADO JEAN LTDA',
+        'periodo': datetime.now().strftime("%d/%m/%Y"),
+        'secoes': data_by_section
+    }
 
 
 def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
@@ -152,7 +305,6 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
     data_by_section = {}
 
     for r_idx, r in enumerate(rows):
-        # 1. Verifica se a linha define uma Seção
         sec_found = None
         for c in r:
             if c is not None:
@@ -172,7 +324,6 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
         
         if sec_found:
             sec_found = limpar_texto(sec_found)
-            # Ignora se for Hortifruti
             deve_ignorar = any(ign.upper() in sec_found.upper() for ign in ignorar_secoes)
             if deve_ignorar:
                 current_section = None
@@ -186,7 +337,6 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
         if current_section is None:
             continue
 
-        # 2. Verifica se a linha define um Produto
         for c in r:
             if c is not None:
                 c_str = str(c).strip()
@@ -197,24 +347,22 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
                     clean_code = str(int(prod_code)) if prod_code.isdigit() else prod_code
                     
                     non_none = [x for x in r if x is not None]
-                    
                     money_vals = [str(x).strip() for x in non_none if "R$" in str(x)]
                     time_vals = [str(x).strip() for x in non_none if re.match(r'^\d{2}:\d{2}$', str(x).strip())]
                     
                     if len(money_vals) >= 3:
-                        venda_str = money_vals[2] # Formato Analítico
+                        venda_str = money_vals[2]
                     elif len(money_vals) >= 1:
-                        venda_str = money_vals[0] # Formato Simplificado
+                        venda_str = money_vals[0]
                     else:
                         venda_str = "R$ 0,00"
                     
                     hora_str = time_vals[0] if time_vals else "--"
-                    
                     sec_key = current_section if current_section else "GERAL"
                     if sec_key not in data_by_section:
                         data_by_section[sec_key] = []
                     
-                    item_key = f"{clean_code}#{hora_str}#{venda_str}"
+                    item_key = f"{clean_code}#{venda_str}"
                     
                     data_by_section[sec_key].append({
                         'key': item_key,
@@ -222,7 +370,8 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
                         'cod_raw': prod_code,
                         'descricao': prod_name,
                         'venda_atual': venda_str,
-                        'hora': hora_str
+                        'hora': hora_str,
+                        'emb': 'UN'
                     })
                     break
 
@@ -231,6 +380,23 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
         'periodo': data_relatorio,
         'secoes': data_by_section
     }
+
+
+def extrair_dados_arquivo(caminho_ou_buffer, nome_arquivo="", ignorar_secoes=None):
+    """
+    Extrator universal: Detecta se o arquivo é CSV ou XLSX e chama a função apropriada.
+    """
+    nome_norm = (nome_arquivo or (caminho_ou_buffer if isinstance(caminho_ou_buffer, str) else "")).lower()
+    
+    if nome_norm.endswith(".csv"):
+        return extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=ignorar_secoes)
+    
+    # Tenta XLSX
+    try:
+        return extrair_dados_xlsx(caminho_ou_buffer, ignorar_secoes=ignorar_secoes)
+    except Exception:
+        # Fallback para CSV se falhar ao abrir como zip/xlsx
+        return extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=ignorar_secoes)
 
 
 try:
@@ -297,9 +463,10 @@ def filtrar_dados(dados, modo="todos", hora_corte=None, apenas_novos=False):
     for sec_nome, itens in dados['secoes'].items():
         itens_validos = []
         for it in itens:
-            h = it['hora']
-            k = it['key']
+            h = it.get('hora', '')
+            k = it.get('key', '')
             
+            # Comparação direta contra a memória do banco
             if modo == "segundo" or apenas_novos:
                 if k in itens_ja_impressos:
                     continue
@@ -465,16 +632,17 @@ def gerar_pdf(dados, caminho_pdf_saida, secoes_filtradas, info_turno="", forcar_
                 Paragraph("CÓD.", style_th_center),
                 Paragraph("DESCRIÇÃO", style_th),
                 Paragraph("VENDA ATUAL", style_th_right),
-                Paragraph("HORA", style_th_center)
+                Paragraph("EMB.", style_th_center)
             ]
         ]
 
         for item in itens:
+            col_emb_val = item.get('emb', 'UN')
             table_data.append([
                 Paragraph(item['cod'], style_cell_code),
                 Paragraph(item['descricao'], style_cell_desc),
                 Paragraph(item['venda_atual'], style_cell_price),
-                Paragraph(item['hora'], style_cell_hora)
+                Paragraph(str(col_emb_val), style_cell_hora)
             ])
 
         t_itens = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -516,13 +684,12 @@ def gerar_pdf(dados, caminho_pdf_saida, secoes_filtradas, info_turno="", forcar_
 
 def main():
     parser = argparse.ArgumentParser(description="Gerador Inteligente de Relatório de Alteração de Preços")
-    parser.add_argument("planilha", nargs="?", default="ALTERACAO_PRECO.xlsx", help="Caminho do arquivo XLSX")
+    parser.add_argument("arquivo", nargs="?", default=None, help="Caminho do arquivo CSV ou XLSX")
     parser.add_argument("saida", nargs="?", default=None, help="Caminho do arquivo PDF de saída")
-    parser.add_argument("--modo", choices=["primeiro", "segundo", "todos", "apos", "ate", "reset"], default="todos", 
-                        help="Modo de geração: 'primeiro' (1º relatório), 'segundo' (2º relatório com apenas os novos), 'todos' (consolidado) ou 'reset'")
-    parser.add_argument("--corte", default=None, help="Horário de corte manual (ex: 13:00)")
-    parser.add_argument("--quebra-pagina-por-secao", action="store_true", help="Força cada seção a iniciar no topo de uma nova página")
-    parser.add_argument("--forcar", action="store_true", help="Ignora a confirmação interativa de avisos")
+    parser.add_argument("--modo", choices=["primeiro", "segundo", "todos", "apos", "ate", "reset"], default="todos", help="Modo de geração do relatório")
+    parser.add_argument("--hora", default=None, help="Hora de corte para filtros 'apos' ou 'ate' (ex: 12:00)")
+    parser.add_argument("--forcar", action="store_true", help="Não faz perguntas interativas de conformidade")
+    parser.add_argument("--quebra-pagina", action="store_true", help="Força cada seção a iniciar no topo de uma nova página")
     
     args = parser.parse_args()
 
@@ -530,60 +697,84 @@ def main():
         resetar_historico()
         return
 
-    # 1. Checagem de Conformidade e Alertas
-    alertas = verificar_conformidade_planilha(args.planilha)
-    if alertas and not args.forcar:
-        print("\n========================================================================")
-        print("                  ⚠️   AVISO DE CONFORMIDADE DA PLANILHA   ⚠️")
-        print("========================================================================")
-        for a in alertas:
-            print(f"\n{a}")
-        print("========================================================================")
-        print("  O padrão ideal é: Formato ANALÍTICO e SEM a seção de Hortifrúti.")
-        print("========================================================================")
-        try:
-            resp = input("\nDeseja continuar mesmo assim e gerar o PDF? [S/N] (Enter = Sim): ").strip().upper()
-            if resp == 'N':
-                print("\nOperação cancelada pelo usuário.")
-                print("Por favor, exporte no Varejofácil no formato ANALÍTICO e sem Hortifrúti.\n")
-                sys.exit(0)
-        except (EOFError, KeyboardInterrupt):
-            pass
+    # Procura arquivo padrao se nao especificado
+    caminho_arquivo = args.arquivo
+    if not caminho_arquivo:
+        for candidato in ["ALTERACAO_PRECO.csv", "ALTERACAO_PRECO.xlsx"]:
+            if os.path.exists(candidato):
+                caminho_arquivo = candidato
+                break
+        if not caminho_arquivo:
+            caminho_arquivo = "ALTERACAO_PRECO.csv"
 
-    dados = extrair_dados_xlsx(args.planilha)
-    
+    # Verificação de conformidade
+    if not args.forcar and os.path.exists(caminho_arquivo):
+        alertas = verificar_conformidade_arquivo(caminho_arquivo)
+        if alertas:
+            print("\n" + "="*65)
+            print("  AVISO DE CONFORMIDADE DA EXPORTAÇÃO:")
+            print("="*65)
+            for a in alertas:
+                print(f"{a}\n")
+            print("="*65)
+
+    try:
+        dados = extrair_dados_arquivo(caminho_arquivo)
+    except Exception as e:
+        print(f"Erro ao ler arquivo: {e}")
+        return
+
+    data_hoje = dados['periodo'] if dados['periodo'] else datetime.now().strftime("%d/%m/%Y")
+    if " a " in data_hoje:
+        data_hoje = data_hoje.split(" a ")[-1].strip()
+
+    caminho_pdf = args.saida
+    if not caminho_pdf:
+        if args.modo == "primeiro":
+            caminho_pdf = "1_RELATORIO_PRECOS.pdf"
+        elif args.modo == "segundo":
+            caminho_pdf = "2_RELATORIO_PRECOS_NOVOS.pdf"
+        else:
+            caminho_pdf = "RELATORIO_ALTERACAO_PRECO.pdf"
+
     info_turno = ""
     if args.modo == "primeiro":
-        info_turno = " (1º Relatório do Dia)"
-        if args.saida is None:
-            args.saida = "1_RELATORIO_PRECOS.pdf"
+        info_turno = " - 1º TURNO (MANHÃ)"
     elif args.modo == "segundo":
-        info_turno = " (2º Relatório - Apenas Novas Alterações)"
-        if args.saida is None:
-            args.saida = "2_RELATORIO_PRECOS_NOVOS.pdf"
-    else:
-        if args.saida is None:
-            args.saida = "RELATORIO_ALTERACAO_PRECO.pdf"
+        info_turno = " - 2º TURNO (NOVAS ALTERAÇÕES)"
+    elif args.modo == "apos" and args.hora:
+        info_turno = f" - ALTERAÇÕES APÓS {args.hora}"
+    elif args.modo == "ate" and args.hora:
+        info_turno = f" - ALTERAÇÕES ATÉ {args.hora}"
 
-    secoes_filtradas, itens_filtrados = filtrar_dados(
-        dados,
-        modo=args.modo,
-        hora_corte=args.corte
-    )
+    secoes_filtradas, todos_itens = filtrar_dados(dados, modo=args.modo, hora_corte=args.hora)
+
+    if not todos_itens:
+        if args.modo == "segundo":
+            print("\n=======================================================")
+            print("  AVISO: Nenhuma nova alteração encontrada para gerar.")
+            print("  Todos os itens já haviam sido gerados no 1º relatório!")
+            print("=======================================================\n")
+        else:
+            print("\n=======================================================")
+            print("  AVISO: Nenhum item disponível para o filtro selecionado.")
+            print("=======================================================\n")
+        return
 
     sucesso = gerar_pdf(
-        dados,
-        args.saida,
-        secoes_filtradas,
+        dados=dados,
+        caminho_pdf_saida=caminho_pdf,
+        secoes_filtradas=secoes_filtradas,
         info_turno=info_turno,
-        forcar_quebra_secao=args.quebra_pagina_por_secao
+        forcar_quebra_secao=args.quebra_pagina
     )
 
-    if sucesso and args.modo == "primeiro":
-        data_hoje = dados['periodo'] if dados['periodo'] else datetime.now().strftime("%d/%m/%Y")
-        if " a " in data_hoje:
-            data_hoje = data_hoje.split(" a ")[-1].strip()
-        salvar_historico(data_hoje, itens_filtrados, info_execucao=args.modo)
+    if sucesso and args.modo in ["primeiro", "segundo"]:
+        salvar_historico(data_hoje, todos_itens, info_execucao=args.modo)
+        if args.modo == "primeiro":
+            print(f"-> Base do 1º relatório salva na memória do dia ({len(todos_itens)} itens).")
+        elif args.modo == "segundo":
+            print(f"-> Novos itens do 2º relatório adicionados à memória ({len(todos_itens)} novos itens).")
 
 
 if __name__ == "__main__":

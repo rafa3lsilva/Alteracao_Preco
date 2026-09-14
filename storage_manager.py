@@ -34,8 +34,7 @@ def obter_cliente_gsheets():
             spreadsheet_url = cfg.get("spreadsheet")
             sheet = client.open_by_url(spreadsheet_url)
             return sheet.sheet1
-    except Exception as e:
-        # Silenciosamente falha para modo local
+    except Exception:
         pass
     return None
 
@@ -58,8 +57,18 @@ def carregar_historico():
                 if d not in historico:
                     historico[d] = {"itens": [], "execucoes": []}
                 
-                if k and k not in historico[d]["itens"]:
-                    historico[d]["itens"].append(k)
+                if k:
+                    if k not in historico[d]["itens"]:
+                        historico[d]["itens"].append(k)
+                    parts = k.split("#")
+                    if len(parts) >= 3:
+                        short_k = f"{parts[0]}#{parts[2]}"
+                        if short_k not in historico[d]["itens"]:
+                            historico[d]["itens"].append(short_k)
+                    elif len(parts) == 2:
+                        short_k = f"{parts[0]}#{parts[1]}"
+                        if short_k not in historico[d]["itens"]:
+                            historico[d]["itens"].append(short_k)
                     
             return historico
         except Exception:
@@ -69,7 +78,16 @@ def carregar_historico():
     if os.path.exists(ARQUIVO_HISTORICO):
         try:
             with open(ARQUIVO_HISTORICO, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                hist_local = json.load(f)
+                for d, data_obj in hist_local.items():
+                    if isinstance(data_obj, dict) and 'itens' in data_obj:
+                        novos_itens = set(data_obj['itens'])
+                        for k in list(data_obj['itens']):
+                            parts = str(k).split("#")
+                            if len(parts) >= 3:
+                                novos_itens.add(f"{parts[0]}#{parts[2]}")
+                        data_obj['itens'] = list(novos_itens)
+                return hist_local
         except Exception:
             return {}
     return {}
@@ -92,7 +110,7 @@ def salvar_historico(data_str, itens_processados, info_execucao=""):
                     it.get('key', ''),
                     it.get('cod', ''),
                     it.get('descricao', ''),
-                    it.get('hora', ''),
+                    it.get('emb', 'UN'),
                     it.get('venda_atual', '')
                 ])
             if rows_to_append:
@@ -145,8 +163,7 @@ def resetar_historico(data_especifica=None):
     if ws:
         try:
             records = ws.get_all_records()
-            # Mantém apenas as linhas que NÃO são de hoje
-            cabecalho = ["data", "horario", "tipo", "chave_item", "codigo", "descricao", "hora", "preco"]
+            cabecalho = ["data", "horario", "tipo", "chave_item", "codigo", "descricao", "emb", "preco"]
             novas_linhas = [cabecalho]
             for row in records:
                 if str(row.get("data", "")).strip() != hoje:
@@ -157,7 +174,7 @@ def resetar_historico(data_especifica=None):
                         row.get("chave_item", ""),
                         row.get("codigo", ""),
                         row.get("descricao", ""),
-                        row.get("hora", ""),
+                        row.get("emb", row.get("hora", "UN")),
                         row.get("preco", "")
                     ])
             ws.clear()

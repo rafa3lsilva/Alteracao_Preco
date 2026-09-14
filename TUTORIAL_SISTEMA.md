@@ -21,8 +21,8 @@ Preencha os campos exatamente como indicado abaixo:
 | **1. Loja\*** | `1 - SUPERMERCADO JEAN LTDA` | Sua loja |
 | **2. Origem** | `REAJUSTE INDIVIDUAL` e `NOTA FISCAL` | Origens de alteração |
 | **3. Tipo\*** | 🔘 **Produtos com Preços Alterados** | ⚠️ **OBRIGATÓRIO**: Filtra apenas os itens com alteração |
-| **4. Período Inicial / Final\*** | `Data de Hoje` (ex: 04/09/2026) | Data da conferência |
-| **5. Formato\*** | 🔘 **Analítico** | ⚠️ **OBRIGATÓRIO**: Traz horários e códigos corretos |
+| **4. Período Inicial / Final\*** | `Data de Hoje` (ex: 14/09/2026) | Data da conferência |
+| **5. Formato\*** | 🔘 **Analítico** *(ou Sintético em CSV)* | Use CSV para obter **descrições completas** |
 | **6. Quebra\*** | 🔘 **Seção** | ⚠️ **OBRIGATÓRIO**: Agrupa por departamentos |
 | **7. Preços** | 🔘 **Varejo** | Preço de gôndola |
 | **8. Ordem / Direção** | 🔘 **Descrição** / 🔘 **Ascendente** | Ordem alfabética dos itens |
@@ -33,31 +33,31 @@ Preencha os campos exatamente como indicado abaixo:
 
 ### 💾 Exportando o Arquivo
 1. No canto superior direito da tela do Varejofácil, clique no botão **`Exportar`**.
-2. Salve o arquivo em formato **Excel (`.xlsx`)** na sua máquina (por exemplo, na pasta `Alteracao_Preco` ou na Área de Trabalho).
+2. Salve o arquivo em formato **CSV (`.csv`)** *(Recomendado para nomes completos dos produtos)* ou **Excel (`.xlsx`)** na sua máquina.
 
 ---
 
 ## PARTE 2: Como Gerar o Relatório (Opção 1 - Painel Web Streamlit)
 
-A interface web permite carregar a planilha diretamente pelo navegador, ver o resumo em tempo real e baixar o PDF pronto.
+A interface web permite carregar o arquivo CSV/XLSX diretamente pelo navegador, ver o resumo em tempo real e baixar o PDF pronto.
 
 ### 1. Abrir a Interface
 - Dê dois cliques no arquivo: **`INICIAR_PAINEL_WEB.bat`**.
 - O navegador abrirá automaticamente a tela do gerador.
 
 ### 2. Rotina da Manhã (1º Relatório)
-1. Exporte a planilha no Varejofácil por volta das **12h / 13h**.
-2. No painel web, **arraste ou selecione a planilha `.xlsx`**.
+1. Exporte o CSV/XLSX no Varejofácil por volta das **12h / 13h**.
+2. No painel web, **arraste ou selecione o arquivo exportado**.
 3. Selecione a opção: **`🌅 1º Relatório (Manhã / Salva Base)`**.
 4. Clique em **`📥 Baixar Relatório em PDF`**.
-5. *O sistema salvará na memória os itens gerados pela manhã.*
+5. *O sistema salvará no banco de dados (Google Sheets / Memória) os itens gerados pela manhã.*
 
 ### 3. Rotina da Tarde (2º Relatório - Apenas Novidades)
-1. Exporte novamente a planilha atualizada no Varejofácil no fim da tarde (**17h / 18h**).
-2. Arraste a nova planilha para o painel web.
+1. Exporte novamente o CSV atualizado no Varejofácil no fim da tarde (**17h / 18h**).
+2. Arraste o novo arquivo para o painel web.
 3. Selecione a opção: **`🌇 2º Relatório (Tarde / Apenas Novos)`**.
-4. O sistema compara automaticamente com a base da manhã:
-   - Se houver novas alterações, exibirá a quantidade e liberará o botão **`📥 Baixar Relatório em PDF`** (apenas com as novidades da tarde).
+4. O sistema compara cada produto diretamente com o banco de dados da manhã:
+   - Se houver novos itens alterados, exibirá a quantidade e liberará o botão **`📥 Baixar Relatório em PDF`** (apenas com as novidades da tarde).
    - Se nenhuma alteração nova foi feita, exibirá um aviso amigável: *"Nenhuma nova alteração encontrada para a tarde!"*.
 
 ### 4. Relatório Consolidado (Opcional)

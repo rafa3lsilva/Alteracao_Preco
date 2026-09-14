@@ -6,8 +6,8 @@ import pandas as pd
 import streamlit as st
 
 from gerar_relatorio_pdf import (
-    extrair_dados_xlsx,
-    verificar_conformidade_planilha,
+    extrair_dados_arquivo,
+    verificar_conformidade_arquivo,
     filtrar_dados,
     gerar_pdf,
     PALAVRAS_CHAVE_HORTIFRUTI
@@ -66,19 +66,19 @@ with st.sidebar:
     st.markdown("---")
     with st.expander("📖 Como funciona a rotina", expanded=False):
         st.markdown("""
-        - **1º Relatório (Manhã ~12h/13h):** Processa todos os itens e salva a base.
-        - **2º Relatório (Tarde ~17h/18h):** Compara com a manhã e gera **apenas as novidades**.
+        - **1º Relatório (Manhã):** Processa todos os itens e salva a base do dia no banco/nuvem.
+        - **2º Relatório (Tarde):** Compara cada item diretamente com o banco e gera **apenas as novidades**.
         - **Consolidado:** Gera tudo do dia sem filtros.
         """)
 
 # ----------------- MAIN CONTENT -----------------
 st.title("🏷️ Relatório de Alteração de Preços")
-st.caption("Gere relatórios em PDF formatados para conferência de gôndola, com controle automático de novidades (manhã/tarde).")
+st.caption("Gere relatórios em PDF formatados para conferência de gôndola, com descrições completas e controle inteligente de novidades (manhã/tarde).")
 
 uploaded_file = st.file_uploader(
-    "Carregue a planilha exportada do Varejofácil (.xlsx):",
-    type=["xlsx"],
-    help="Selecione o arquivo Excel exportado do Varejofácil (Listagem de Preços - Analítico)"
+    "Carregue o arquivo exportado do Varejofácil (.csv ou .xlsx):",
+    type=["csv", "xlsx"],
+    help="Envie o arquivo CSV (Recomendado para descrição completa) ou planilha Excel (.xlsx)"
 )
 
 if uploaded_file is not None:
@@ -86,7 +86,7 @@ if uploaded_file is not None:
     file_bytes = uploaded_file.read()
     file_buffer = io.BytesIO(file_bytes)
     
-    alertas = verificar_conformidade_planilha(file_buffer)
+    alertas = verificar_conformidade_arquivo(file_buffer, nome_arquivo=uploaded_file.name)
     if alertas:
         for al in alertas:
             st.warning(al)
@@ -94,18 +94,18 @@ if uploaded_file is not None:
     # 2. Extração dos Dados
     file_buffer.seek(0)
     try:
-        dados = extrair_dados_xlsx(file_buffer, ignorar_secoes=PALAVRAS_CHAVE_HORTIFRUTI)
+        dados = extrair_dados_arquivo(file_buffer, nome_arquivo=uploaded_file.name, ignorar_secoes=PALAVRAS_CHAVE_HORTIFRUTI)
     except Exception as e:
-        st.error(f"Erro ao processar a planilha: {e}")
+        st.error(f"Erro ao processar o arquivo: {e}")
         st.stop()
 
     total_secoes = len(dados['secoes'])
     total_itens_brutos = sum(len(itens) for itens in dados['secoes'].values())
 
-    # Métricas nativas do Streamlit (perfeitas tanto no tema claro quanto escuro)
+    # Métricas nativas
     m1, m2, m3, m4 = st.columns(4)
     m1.metric(label="Empresa", value=dados["empresa"][:20])
-    m2.metric(label="Data do Arquivo", value=dados["periodo"])
+    m2.metric(label="Data", value=dados["periodo"])
     m3.metric(label="Seções Válidas", value=f"{total_secoes} seções")
     m4.metric(label="Total de Itens", value=f"{total_itens_brutos} itens")
 
@@ -134,13 +134,13 @@ if uploaded_file is not None:
     # Exibe informações sobre o resultado do filtro
     if modo_escolhido == "segundo":
         if total_filtrados == 0:
-            st.warning("⚠️ **Nenhuma nova alteração encontrada para a tarde!**\n\nTodos os itens desta planilha já haviam sido impressos no 1º relatório da manhã.")
+            st.warning("⚠️ **Nenhuma nova alteração encontrada para a tarde!**\n\nTodos os itens deste arquivo já haviam sido gerados no 1º relatório da manhã.")
         else:
             st.success(f"✨ **{total_filtrados} novos itens encontrados** após o 1º relatório da manhã!")
     elif modo_escolhido == "primeiro":
-        st.info(f"ℹ️ Serão incluídos **{total_filtrados} itens**. Ao baixar o PDF, estes itens ficarão salvos como a base da manhã.")
+        st.info(f"ℹ️ Serão incluídos **{total_filtrados} itens**. Ao baixar o PDF, estes itens ficarão salvos como a base da manhã no banco de dados.")
     else:
-        st.info(f"ℹ️ Serão incluídos todos os **{total_filtrados} itens** encontrados na planilha.")
+        st.info(f"ℹ️ Serão incluídos todos os **{total_filtrados} itens** encontrados no arquivo.")
 
     # 4. Geração do PDF e Botão de Download
     if total_filtrados > 0:
@@ -184,27 +184,28 @@ if uploaded_file is not None:
                 use_container_width=True
             )
 
-    # 5. Tabela de Pré-visualização
+    # 5. Tabela de Pré-visualização com Descrição Completa
     with st.expander(f"🔍 Pré-visualizar Tabela de Produtos ({total_filtrados} itens selecionados)", expanded=False):
         if total_filtrados > 0:
             linhas_tabela = []
             for sec, itens in secoes_filtradas.items():
                 for it in itens:
+                    col_emb = it.get('emb', 'UN')
                     linhas_tabela.append({
                         'Seção': sec,
                         'Código': it['cod'],
-                        'Descrição': it['descricao'],
-                        'Preço': it['venda_atual'],
-                        'Hora': it['hora']
+                        'Descrição Completa': it['descricao'],
+                        'Preço de Venda': it['venda_atual'],
+                        'Embalagem': col_emb
                     })
             df_preview = pd.DataFrame(linhas_tabela)
             st.dataframe(df_preview, use_container_width=True, hide_index=True)
         else:
             st.write("Nenhum item para exibir com os filtros atuais.")
 else:
-    # Boas-vindas nativas do Streamlit com alta legibilidade (100% adaptável a tema claro ou escuro)
+    # Boas-vindas nativas
     with st.container():
-        st.info("👋 **Bem-vindo ao Gerador de Relatórios de Preço!**\n\nPara começar, faça o upload da planilha exportada do Varejofácil no campo acima.")
+        st.info("👋 **Bem-vindo ao Gerador de Relatórios de Preço!**\n\nPara começar, faça o upload do arquivo exportado do Varejofácil (`.csv` ou `.xlsx`) no campo acima.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -216,16 +217,16 @@ else:
                 3. **Origem:** Selecionar `REAJUSTE INDIVIDUAL` e `NOTA FISCAL`
                 4. **Tipo:** 🔘 **Produtos com Preços Alterados** *(Obrigatório)*
                 5. **Período:** Data de Hoje *(Inicial e Final)*
-                6. **Formato:** 🔘 **Analítico** *(Obrigatório)*
-                7. **Quebra:** 🔘 **Seção** *(Obrigatório)*
-                8. Clique no botão **Exportar** e envie o `.xlsx` aqui!
+                6. **Quebra:** 🔘 **Seção** *(Obrigatório)*
+                7. **Exportar:** Clique no botão superior direito e escolha **CSV** (para descrições completas) ou Excel!
                 """)
         with col2:
             with st.container(border=True):
                 st.markdown("### ⚡ Vantagens da Rotina Diária")
                 st.markdown("""
-                - 🌅 **Pela Manhã (~12h/13h):** Gera o 1º lote e grava a base do dia.
-                - 🌇 **À Tarde (~17h/18h):** Gera **apenas os itens novos**, sem repetir nada da manhã.
+                - 📝 **Descrição Completa:** Nomes detalhados sem abreviações confusas.
+                - 🌅 **Pela Manhã (~12h/13h):** Gera o 1º lote e grava a base do dia no banco de dados.
+                - 🌇 **À Tarde (~17h/18h):** Gera **apenas os itens novos**, comparando com o que já foi salvo.
                 - 🥬 **Hortifrúti:** Filtrado e removido automaticamente.
-                - 📄 **Impressão Otimizada:** Aproveitamento contínuo de páginas.
+                - 📄 **Impressão Otimizada:** Aproveitamento contínuo de páginas sem desperdício de papel.
                 """)
