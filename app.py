@@ -10,7 +10,7 @@ from gerar_relatorio_pdf import (
     verificar_conformidade_arquivo,
     filtrar_dados,
     gerar_pdf,
-    PALAVRAS_CHAVE_HORTIFRUTI
+    PALAVRAS_CHAVE_IGNORADAS
 )
 
 from storage_manager import (
@@ -66,9 +66,9 @@ with st.sidebar:
     st.markdown("---")
     with st.expander("📖 Como funciona a rotina", expanded=False):
         st.markdown("""
-        - **1º Relatório (Manhã):** Processa todos os itens e salva a base do dia no banco/nuvem.
-        - **2º Relatório (Tarde):** Compara cada item diretamente com o banco e gera **apenas as novidades**.
-        - **Consolidado:** Gera tudo do dia sem filtros.
+        - **1º Relatório (Manhã):** Processa todos os itens válidos e salva a base no banco.
+        - **2º Relatório (Tarde):** Compara diretamente com o banco e gera **apenas as novidades**.
+        - **Filtros Automáticos:** Hortifrúti, Açougue e itens com preço R$ 0,00 são descartados.
         """)
 
 # ----------------- MAIN CONTENT -----------------
@@ -94,7 +94,7 @@ if uploaded_file is not None:
     # 2. Extração dos Dados
     file_buffer.seek(0)
     try:
-        dados = extrair_dados_arquivo(file_buffer, nome_arquivo=uploaded_file.name, ignorar_secoes=PALAVRAS_CHAVE_HORTIFRUTI)
+        dados = extrair_dados_arquivo(file_buffer, nome_arquivo=uploaded_file.name, ignorar_secoes=PALAVRAS_CHAVE_IGNORADAS)
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
         st.stop()
@@ -107,7 +107,7 @@ if uploaded_file is not None:
     m1.metric(label="Empresa", value=dados["empresa"][:20])
     m2.metric(label="Data", value=dados["periodo"])
     m3.metric(label="Seções Válidas", value=f"{total_secoes} seções")
-    m4.metric(label="Total de Itens", value=f"{total_itens_brutos} itens")
+    m4.metric(label="Total de Itens Válidos", value=f"{total_itens_brutos} itens")
 
     st.divider()
 
@@ -138,9 +138,9 @@ if uploaded_file is not None:
         else:
             st.success(f"✨ **{total_filtrados} novos itens encontrados** após o 1º relatório da manhã!")
     elif modo_escolhido == "primeiro":
-        st.info(f"ℹ️ Serão incluídos **{total_filtrados} itens**. Ao baixar o PDF, estes itens ficarão salvos como a base da manhã no banco de dados.")
+        st.info(f"ℹ️ Serão incluídos **{total_filtrados} itens válidos**. Ao baixar o PDF, estes itens ficarão salvos como a base da manhã no banco de dados.")
     else:
-        st.info(f"ℹ️ Serão incluídos todos os **{total_filtrados} itens** encontrados no arquivo.")
+        st.info(f"ℹ️ Serão incluídos todos os **{total_filtrados} itens válidos** encontrados no arquivo.")
 
     # 4. Geração do PDF e Botão de Download
     if total_filtrados > 0:
@@ -224,9 +224,10 @@ else:
             with st.container(border=True):
                 st.markdown("### ⚡ Vantagens da Rotina Diária")
                 st.markdown("""
-                - 📝 **Descrição Completa:** Nomes detalhados sem abreviações confusas.
-                - 🌅 **Pela Manhã (~12h/13h):** Gera o 1º lote e grava a base do dia no banco de dados.
-                - 🌇 **À Tarde (~17h/18h):** Gera **apenas os itens novos**, comparando com o que já foi salvo.
-                - 🥬 **Hortifrúti:** Filtrado e removido automaticamente.
-                - 📄 **Impressão Otimizada:** Aproveitamento contínuo de páginas sem desperdício de papel.
+                - 📝 **Descrição Completa:** Nomes detalhados sem cortes.
+                - 🥩🥬 **Hortifrúti e Açougue:** Filtrados e descartados automaticamente.
+                - 🚫 **Preço R$ 0,00:** Itens zerados não entram no relatório.
+                - 🌅 **Pela Manhã (~12h/13h):** Salva a base do dia na nuvem.
+                - 🌇 **À Tarde (~17h/18h):** Gera **apenas as novidades**, comparando com a base.
+                - 📄 **Impressão Otimizada:** Aproveitamento contínuo de páginas.
                 """)

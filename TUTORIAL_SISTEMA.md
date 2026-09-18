@@ -27,7 +27,7 @@ Preencha os campos exatamente como indicado abaixo:
 | **7. Preços** | 🔘 **Varejo** | Preço de gôndola |
 | **8. Ordem / Direção** | 🔘 **Descrição** / 🔘 **Ascendente** | Ordem alfabética dos itens |
 | **9. Exibir** | ☑️ Em Linha &nbsp; ☑️ Fora de Linha<br>☑️ Com Preço &nbsp; ☑️ Sem Preço | Deixar todas as caixas marcadas |
-| **10. Seção** | *(Sem Hortifrúti)* | O sistema filtra Hortifrúti automaticamente |
+| **10. Seção** | *(Sem Hortifrúti / Açougue)* | O sistema filtra Hortifrúti, Açougue e itens zerados automaticamente |
 
 ---
 

@@ -18,14 +18,32 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
 )
 from reportlab.pdfgen import canvas
 
 ARQUIVO_HISTORICO = ".historico_alteracoes.json"
 
-# Seções e palavras-chave de Hortifrúti que devem ser alertadas/ignoradas
-PALAVRAS_CHAVE_HORTIFRUTI = ['HORTIFRUTI', 'HORTIFRUT', 'HORTFRUT', 'FLV', 'HORTI FRUTI', 'HORTI-FRUTI', 'HORTIFRUTICOLA']
+# Seções e palavras-chave de Hortifrúti e Açougue que devem ser alertadas/ignoradas
+PALAVRAS_CHAVE_IGNORADAS = [
+    'HORTIFRUTI', 'HORTIFRUT', 'HORTFRUT', 'FLV', 'HORTI FRUTI', 'HORTI-FRUTI', 'HORTIFRUTICOLA',
+    'AÇOUGUE', 'ACOUGUE', 'CARNES', 'CARNE', 'BOVINO', 'AVES', 'SUINO', 'PEIXARIA'
+]
+# Retrocompatibilidade de importação
+PALAVRAS_CHAVE_HORTIFRUTI = PALAVRAS_CHAVE_IGNORADAS
+
+
+def preco_eh_zero(preco_val):
+    """Retorna True se o preço for nulo, vazio, 0 ou 0,00."""
+    if not preco_val:
+        return True
+    s = str(preco_val).replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".").strip()
+    try:
+        val = float(s)
+        return val <= 0.0001
+    except (ValueError, TypeError):
+        return True
+
 
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -71,13 +89,12 @@ def limpar_texto(texto):
 
 def verificar_conformidade_arquivo(caminho_ou_buffer, nome_arquivo=""):
     """
-    Verifica se o arquivo segue as boas práticas (ex: presença de hortifrúti).
+    Verifica se o arquivo segue as boas práticas (ex: presença de hortifrúti / açougue).
     """
     alertas = []
     nome_norm = (nome_arquivo or (caminho_ou_buffer if isinstance(caminho_ou_buffer, str) else "")).lower()
     
     if nome_norm.endswith(".csv"):
-        # Leitura de linhas do CSV
         try:
             if isinstance(caminho_ou_buffer, str):
                 with open(caminho_ou_buffer, 'r', encoding='utf-8', errors='replace') as f:
@@ -94,12 +111,12 @@ def verificar_conformidade_arquivo(caminho_ou_buffer, nome_arquivo=""):
                 if hasattr(caminho_ou_buffer, 'seek'):
                     caminho_ou_buffer.seek(0)
 
-            tem_hortifruti = any(kw in conteudo.upper() for kw in PALAVRAS_CHAVE_HORTIFRUTI)
-            if tem_hortifruti:
+            tem_hortifruti_acougue = any(kw in conteudo.upper() for kw in PALAVRAS_CHAVE_IGNORADAS)
+            if tem_hortifruti_acougue:
                 alertas.append(
-                    "[!] SETOR HORTIFRÚTI DETECTADO NO CSV:\n"
-                    "    O setor de HORTIFRÚTI foi incluído no arquivo exportado.\n"
-                    "    * O sistema removerá todas as seções de Hortifrúti automaticamente do PDF."
+                    "[!] SETOR HORTIFRÚTI / AÇOUGUE DETECTADO NO CSV:\n"
+                    "    O arquivo exportado contém seções de Hortifrúti e/ou Açougue.\n"
+                    "    * O sistema removerá todas essas seções automaticamente do PDF final."
                 )
         except Exception:
             pass
@@ -125,22 +142,22 @@ def verificar_conformidade_arquivo(caminho_ou_buffer, nome_arquivo=""):
                 "    * Recomendação: Use a exportação em CSV para obter as descrições mais completas dos produtos."
             )
 
-        tem_hortifruti = False
+        tem_ignorado = False
         for r in rows:
             for c in r:
                 if c:
                     c_upper = str(c).upper()
-                    if any(kw in c_upper for kw in PALAVRAS_CHAVE_HORTIFRUTI):
-                        tem_hortifruti = True
+                    if any(kw in c_upper for kw in PALAVRAS_CHAVE_IGNORADAS):
+                        tem_ignorado = True
                         break
-            if tem_hortifruti:
+            if tem_ignorado:
                 break
 
-        if tem_hortifruti:
+        if tem_ignorado:
             alertas.append(
-                "[!] SETOR HORTIFRÚTI DETECTADO:\n"
-                "    O setor de HORTIFRÚTI foi incluído na exportação da planilha.\n"
-                "    * O sistema removerá o Hortifrúti automaticamente do PDF."
+                "[!] SETOR HORTIFRÚTI / AÇOUGUE DETECTADO:\n"
+                "    O setor de Hortifrúti e/ou Açougue foi incluído na exportação.\n"
+                "    * O sistema removerá essas seções automaticamente do PDF final."
             )
     except Exception:
         pass
@@ -150,7 +167,7 @@ def verificar_conformidade_arquivo(caminho_ou_buffer, nome_arquivo=""):
 
 def extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=None):
     if ignorar_secoes is None:
-        ignorar_secoes = PALAVRAS_CHAVE_HORTIFRUTI
+        ignorar_secoes = PALAVRAS_CHAVE_IGNORADAS
 
     if isinstance(caminho_ou_buffer, str):
         if not os.path.exists(caminho_ou_buffer):
@@ -220,6 +237,7 @@ def extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=None):
         sec_raw = r[col_quebra].strip() if col_quebra != -1 and len(r) > col_quebra else ""
         if sec_raw:
             sec_clean = re.sub(r'^(Seção|Secao|Seo):\s*', '', sec_raw, flags=re.IGNORECASE).strip()
+            # Ignora se for hortifruti ou acougue
             if any(ign.upper() in sec_clean.upper() for ign in ignorar_secoes):
                 current_section = None
                 continue
@@ -237,6 +255,10 @@ def extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=None):
         raw_hora = r[col_hora].strip() if col_hora != -1 and len(r) > col_hora else ""
 
         if not raw_cod or not raw_desc:
+            continue
+
+        # FILTRO DE PREÇO ZERADO
+        if preco_eh_zero(raw_venda):
             continue
 
         clean_cod = str(int(raw_cod)) if raw_cod.isdigit() else raw_cod
@@ -275,7 +297,7 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
         raise FileNotFoundError(f"Arquivo não encontrado: {caminho_xlsx}")
 
     if ignorar_secoes is None:
-        ignorar_secoes = PALAVRAS_CHAVE_HORTIFRUTI
+        ignorar_secoes = PALAVRAS_CHAVE_IGNORADAS
 
     wb = openpyxl.load_workbook(caminho_xlsx, data_only=True)
     ws = wb.active
@@ -357,6 +379,10 @@ def extrair_dados_xlsx(caminho_xlsx, ignorar_secoes=None):
                     else:
                         venda_str = "R$ 0,00"
                     
+                    # FILTRO DE PREÇO ZERADO
+                    if preco_eh_zero(venda_str):
+                        break
+
                     hora_str = time_vals[0] if time_vals else "--"
                     sec_key = current_section if current_section else "GERAL"
                     if sec_key not in data_by_section:
@@ -386,6 +412,9 @@ def extrair_dados_arquivo(caminho_ou_buffer, nome_arquivo="", ignorar_secoes=Non
     """
     Extrator universal: Detecta se o arquivo é CSV ou XLSX e chama a função apropriada.
     """
+    if ignorar_secoes is None:
+        ignorar_secoes = PALAVRAS_CHAVE_IGNORADAS
+
     nome_norm = (nome_arquivo or (caminho_ou_buffer if isinstance(caminho_ou_buffer, str) else "")).lower()
     
     if nome_norm.endswith(".csv"):
@@ -395,7 +424,6 @@ def extrair_dados_arquivo(caminho_ou_buffer, nome_arquivo="", ignorar_secoes=Non
     try:
         return extrair_dados_xlsx(caminho_ou_buffer, ignorar_secoes=ignorar_secoes)
     except Exception:
-        # Fallback para CSV se falhar ao abrir como zip/xlsx
         return extrair_dados_csv(caminho_ou_buffer, ignorar_secoes=ignorar_secoes)
 
 
@@ -465,7 +493,12 @@ def filtrar_dados(dados, modo="todos", hora_corte=None, apenas_novos=False):
         for it in itens:
             h = it.get('hora', '')
             k = it.get('key', '')
+            venda_atual = it.get('venda_atual', '')
             
+            # FILTRO DE PREÇO ZERADO
+            if preco_eh_zero(venda_atual):
+                continue
+
             # Comparação direta contra a memória do banco
             if modo == "segundo" or apenas_novos:
                 if k in itens_ja_impressos:
@@ -489,8 +522,8 @@ def gerar_pdf(dados, caminho_pdf_saida, secoes_filtradas, info_turno="", forcar_
     total_itens = sum(len(itens) for itens in secoes_filtradas.values())
     if total_itens == 0:
         print("\n=======================================================")
-        print("  AVISO: Nenhuma alteração encontrada para gerar.")
-        print("  Verifique se a planilha contém itens alterados.")
+        print("  AVISO: Nenhuma alteração válida encontrada para gerar.")
+        print("  (Itens zerados, Hortifrúti e Açougue são ignorados).")
         print("=======================================================\n")
         return False
 
@@ -668,9 +701,12 @@ def gerar_pdf(dados, caminho_pdf_saida, secoes_filtradas, info_turno="", forcar_
 
         t_itens.setStyle(TableStyle(t_style))
         
-        story.append(t_sec)
-        story.append(Spacer(1, 1.2 * mm))
-        story.append(t_itens)
+        if len(itens) <= 32:
+            story.append(KeepTogether([t_sec, Spacer(1, 1.2 * mm), t_itens]))
+        else:
+            story.append(t_sec)
+            story.append(Spacer(1, 1.2 * mm))
+            story.append(t_itens)
 
         if forcar_quebra_secao and idx < len(secoes_lista) - 1:
             story.append(PageBreak())
@@ -758,6 +794,7 @@ def main():
         else:
             print("\n=======================================================")
             print("  AVISO: Nenhum item disponível para o filtro selecionado.")
+            print("  (Preços zerados, Hortifrúti e Açougue são ignorados).")
             print("=======================================================\n")
         return
 
