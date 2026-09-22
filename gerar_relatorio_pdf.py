@@ -27,7 +27,7 @@ ARQUIVO_HISTORICO = ".historico_alteracoes.json"
 # Seções e palavras-chave de Hortifrúti e Açougue que devem ser alertadas/ignoradas
 PALAVRAS_CHAVE_IGNORADAS = [
     'HORTIFRUTI', 'HORTIFRUT', 'HORTFRUT', 'FLV', 'HORTI FRUTI', 'HORTI-FRUTI', 'HORTIFRUTICOLA',
-    'AÇOUGUE', 'ACOUGUE', 'CARNES', 'CARNE', 'BOVINO', 'AVES', 'SUINO', 'PEIXARIA'
+    'AÇOUGUE', 'FRIGORIFICO', 'FRIGORIFICOS','ACOUGUE', 'CARNES', 'CARNE', 'BOVINO', 'AVES', 'SUINO', 'PEIXARIA'
 ]
 # Retrocompatibilidade de importação
 PALAVRAS_CHAVE_HORTIFRUTI = PALAVRAS_CHAVE_IGNORADAS
